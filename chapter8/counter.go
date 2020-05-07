@@ -1,10 +1,10 @@
-package chapter8
+package main
 
 import (
-	// "fmt"
+	"fmt"
 	"regexp"
 	"sync"
-	// "time"
+	"time"
 )
 
 // 下文是简爱的第一章，分别使用Go程和不使用 Go 程进行统计全文中出现 I, 和 have 出现的次数，并得到 Benchmark 的结果
@@ -59,14 +59,16 @@ var keywords = map[string]bool{"I": true, "have": true}
 var words = regexp.MustCompile(`\s`).Split(content, -1)
 
 func CounterWithoutGoRoutines() {
+	start := time.Now()
 	dict := map[string]int{}
 	for _, word := range words {
 		if _, ok := keywords[word]; ok {
-			// time.Sleep(time.Duration(10 * time.Millisecond)) // 模拟一个耗时的操作
+			time.Sleep(time.Duration(100 * time.Millisecond)) // 模拟一个耗时的操作
 			dict[word]++
 		}
 	}
 
+	fmt.Println(time.Since(start))
 	// fmt.Println(dict)
 }
 
@@ -102,6 +104,7 @@ func CounterWithoutGoRoutines() {
 // }
 
 func CounterWithGoRoutines() {
+	start := time.Now()
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	dict := map[string]int{}
@@ -109,7 +112,7 @@ func CounterWithGoRoutines() {
 		wg.Add(1)
 		go func(word string) {
 			defer wg.Done()
-			// time.Sleep(time.Duration(10 * time.Millisecond)) // 模拟一个耗时的操作
+			time.Sleep(time.Duration(100 * time.Millisecond)) // 模拟一个耗时的操作
 			if _, ok := keywords[word]; !ok {
 				return
 			}
@@ -121,4 +124,40 @@ func CounterWithGoRoutines() {
 
 	wg.Wait()
 	// fmt.Println(dict)
+	fmt.Println(time.Since(start))
+}
+
+var tokens = make(chan struct{}, 1000) // 10, 100, 1000 有着巨大的差距，并发10甚至低于同步
+
+func CounterWithLimitedGoRoutines() {
+	start := time.Now()
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	dict := map[string]int{}
+	for _, word := range words {
+		wg.Add(1)
+		go func(word string) {
+			tokens<-struct{}{}
+			defer func(){
+				<-tokens
+			}()
+			defer wg.Done()
+			time.Sleep(time.Duration(100 * time.Millisecond)) // 模拟一个耗时的操作
+			if _, ok := keywords[word]; !ok {
+				return
+			}
+			mu.Lock()
+			dict[word]++
+			mu.Unlock()
+		}(word)
+	}
+
+	wg.Wait()
+	fmt.Println(time.Since(start))
+}
+
+func main() {
+	// CounterWithoutGoRoutines()
+	// CounterWithGoRoutines()
+	CounterWithLimitedGoRoutines()
 }
