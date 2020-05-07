@@ -1,10 +1,10 @@
 package chapter8
 
 import (
-	"fmt"
+	// "fmt"
 	"regexp"
 	"sync"
-	"time"
+	// "time"
 )
 
 // 下文是简爱的第一章，分别使用Go程和不使用 Go 程进行统计全文中出现 I, 和 have 出现的次数，并得到 Benchmark 的结果
@@ -57,60 +57,20 @@ Take her away to the red-room, and lock her in there. Four hands were immediatel
 
 var keywords = map[string]bool{"I": true, "have": true}
 var words = regexp.MustCompile(`\s`).Split(content, -1)
-var count int
 
 func CounterWithoutGoRoutines() {
 	dict := map[string]int{}
 	for _, word := range words {
-		count++
 		if _, ok := keywords[word]; ok {
-			time.Sleep(time.Duration(10 * time.Millisecond)) // 模拟一个耗时的操作
+			// time.Sleep(time.Duration(10 * time.Millisecond)) // 模拟一个耗时的操作
 			dict[word]++
 		}
 	}
 
-	fmt.Printf("word count = %d\n", count)
-	fmt.Println(dict)
+	// fmt.Println(dict)
 }
 
-func CounterWithGoRoutines() {
-	var ch = make(chan struct{}, len(words))
-	m := &sync.Map{}
-	for _, word := range words {
-		go func(word string) {
-			ch <- struct{}{}
-			count++
-			time.Sleep(time.Duration(10 * time.Millisecond)) // 模拟一个耗时的操作
-			if _, ok := keywords[word]; !ok {
-				return
-			}
-			if count, ok := m.Load(word); ok {
-				count := count.(int)
-				m.Store(word, count+1)
-			} else {
-				m.Store(word, 1)
-			}
-		}(word)
-	}
-
-	var c int
-	for {
-		<-ch
-		c++
-		if c == len(words) {
-			break
-		}
-	}
-
-	m.Range(func(key, value interface{}) bool {
-		fmt.Printf("word %v, count %d", key.(string), value.(int))
-		fmt.Println()
-		return true
-	})
-	fmt.Printf("word count = %d\n", count)
-}
-
-// 下述代码不能正常工作，正在寻找原因
+// 下述代码不能正常工作，因为 sync.Map 不保证 89-93 行之间的原子性，只能说，m.Load() 是线程安全的
 // func CounterWithGoRoutines() {
 // 	var wg sync.WaitGroup
 // 	m := &sync.Map{}
@@ -140,3 +100,25 @@ func CounterWithGoRoutines() {
 // 	})
 // 	fmt.Printf("word count = %d\n", count)
 // }
+
+func CounterWithGoRoutines() {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	dict := map[string]int{}
+	for _, word := range words {
+		wg.Add(1)
+		go func(word string) {
+			defer wg.Done()
+			// time.Sleep(time.Duration(10 * time.Millisecond)) // 模拟一个耗时的操作
+			if _, ok := keywords[word]; !ok {
+				return
+			}
+			mu.Lock()
+			dict[word]++
+			mu.Unlock()
+		}(word)
+	}
+
+	wg.Wait()
+	// fmt.Println(dict)
+}
